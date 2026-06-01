@@ -1,0 +1,29 @@
+# --- Per-paper research workspaces (keep only the template) ---
+projects/*
+!projects/template/
+
+# --- Personal config (copy config.example.py -> config.py and set your email) ---
+scripts/config.py
+
+# --- Project-specific one-off helpers (not part of the reusable framework) ---
+scripts/verify_dois.py
+scripts/patch_bib_years.py
+
+# --- Large / licensed data (download your own from scimagojr.com) ---
+data/sjr_*.csv
+data/scimagojr*.csv
+
+# --- PDFs (copyright) ---
+*.pdf
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
