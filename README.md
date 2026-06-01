@@ -28,6 +28,13 @@ pip install -r requirements.txt
 
 入力テンプレート: `projects/template/input/input.md`
 
-## 仕様書
+## ドキュメント
 
-`C:\Users\tkm14\OneDrive\Research\研究効率化\論文執筆エージェント_構成仕様書_v1.2.md`
+### マニュアル (`manuals/`)
+- [`quickstart.md`](manuals/quickstart.md) — クイックスタート（最短手順）
+- [`user_guide.md`](manuals/user_guide.md) — セットアップ・各チェックポイント操作・トラブルシューティング
+- [`review_workflow.md`](manuals/review_workflow.md) — マルチ AI レビュー（ChatGPT / Gemini）の手順
+- [`notebooklm_workflow.md`](manuals/notebooklm_workflow.md) — NotebookLM による Factcheck の手順
+
+### 設計仕様書 (`docs/`)
+- [`構成仕様書_v1.2.md`](docs/構成仕様書_v1.2.md) — システム全体の設計仕様（アーキテクチャ・各コンポーネント・チェックポイント設計）
