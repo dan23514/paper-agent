@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>paper-agent 最終仕様書 v1.2</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Mincho ProN","游明朝",YuMincho,"MS Mincho",Georgia,serif;font-size:11pt;line-height:1.85;color:#1a1a1a;max-width:820px;margin:0 auto;padding:50px 60px}
+h1{font-size:21pt;border-bottom:3px solid #1a4a7a;padding-bottom:10px;margin-bottom:6px;color:#1a2a3a}
+.subtitle{font-size:11pt;color:#555;margin-bottom:4px}
+.meta-block{font-size:9.5pt;color:#666;border:1px solid #ddd;background:#f9f9f9;padding:10px 14px;margin:16px 0 28px;border-radius:4px}
+h2{font-size:14pt;color:#1a4a7a;border-left:5px solid #1a4a7a;padding-left:10px;margin:34px 0 12px;page-break-after:avoid}
+h3{font-size:12pt;color:#333;margin:22px 0 8px;border-bottom:1px dotted #ccc;padding-bottom:3px;page-break-after:avoid}
+h4{font-size:11pt;color:#444;margin:16px 0 6px}
+p{margin-bottom:10px}
+ul,ol{margin:6px 0 10px 22px}
+li{margin-bottom:4px}
+table{border-collapse:collapse;width:100%;font-size:9.5pt;margin:12px 0;page-break-inside:avoid}
+th{background:#1a4a7a;color:#fff;padding:7px 10px;text-align:left;font-weight:normal}
+td{border:1px solid #ccc;padding:6px 10px;vertical-align:top}
+tr:nth-child(even) td{background:#f4f7fb}
+code{font-family:"Courier New",monospace;background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:9pt}
+pre{font-family:"Courier New",monospace;background:#f4f4f4;border:1px solid #ddd;padding:12px;border-radius:4px;font-size:8.5pt;overflow-x:auto;margin:10px 0;line-height:1.6;page-break-inside:avoid}
+.note{background:#fff8e1;border-left:4px solid #f9a825;padding:8px 12px;margin:10px 0;font-size:9.5pt;border-radius:0 4px 4px 0}
+.warn{background:#fdecea;border-left:4px solid #c0392b;padding:8px 12px;margin:10px 0;font-size:9.5pt;border-radius:0 4px 4px 0}
+footer{margin-top:50px;padding-top:12px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
+@media print{
+  body{padding:20px 30px;font-size:10pt}
+  h2{page-break-before:auto}
+  table,pre,.note,.warn{page-break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<h1>paper-agent 最終仕様書</h1>
+<p class="subtitle">論文執筆エージェント 構成仕様書</p>
+<div class="meta-block">
+<strong>Version</strong>: 1.2 &nbsp;|&nbsp;
+<strong>Date</strong>: 2026-06-02 &nbsp;|&nbsp;
+<strong>Target field (Phase 1)</strong>: 理学・工学 &nbsp;|&nbsp;
+<strong>Repository</strong>: https://github.com/dan23514/paper-agent
+</div>
+
+<h2>1. 概要</h2>
+
+<h3>1.1 目的</h3>
+<p>ユーザーから提供される研究要素（テーマ・手法・データ・結果・解釈）を入力として、Q1/Q2 ジャーナル掲載論文のみを引用した日本語の学術論文ドラフトを生成し、ファクトチェック・マルチAIレビューを経て Word (.docx) 形式で出力する半自動エージェントを構築する。</p>
+
+<h3>1.2 設計原則</h3>
+<table>
+<tr><th>#</th><th>原則</th><th>内容</th></tr>
+<tr><td>1</td><td>Claude Code 単一環境完結</td><td>追加フレームワーク（LangGraph 等）を導入せず、Claude Code のスラッシュコマンド・Subagent・Skill・MCP で構成する</td></tr>
+<tr><td>2</td><td>Human-in-the-loop によるコスト圧縮</td><td>ChatGPT・Gemini のレビューはユーザーが Web 版を手動で呼び出すリレー方式とし、API 従量課金を回避する。Claude レビューは Claude Code 内で自動実行する</td></tr>
+<tr><td>3</td><td>引用ファクトチェックの独立化</td><td>汎用 LLM の引用捏造リスクを排除するため、ファクトチェックは NotebookLM に分離する</td></tr>
+<tr><td>4</td><td>チェックポイント駆動</td><td>全自動ではなく、明示的なチェックポイントごとに成果物を出力し、ユーザーが介入・承認してから次工程に進む</td></tr>
+<tr><td>5</td><td>引用捏造防止</td><td><code>verify_refs.py</code> が本文中の全 <code>[REF: Rx]</code> を候補リスト ID と照合。無効 ID は即時リジェクト・再生成</td></tr>
+<tr><td>6</td><td>DOI 検証優先</td><td>文献は必ず CrossRef API で DOI・タイトル・年を実在確認してから BibTeX を採用する</td></tr>
+</table>
+
+<h3>1.3 想定コスト</h3>
+<ul>
+<li>Claude Code Pro または Max サブスクリプション</li>
+<li>OpenAlex API：完全無料（登録不要）</li>
+<li>CrossRef API：完全無料</li>
+<li>Exa MCP：補完用途のみのため無料枠内に収まる想定</li>
+<li>NotebookLM / ChatGPT (web) / Gemini (web)：いずれも無料枠を活用</li>
+</ul>
+
+<h2>2. システム構成</h2>
+
+<h3>2.1 コンポーネント一覧</h3>
+<table>
+<tr><th>ID</th><th>コンポーネント</th><th>種別</th><th>役割</th></tr>
+<tr><td>C1</td><td>Input Loader</td><td>Slash Cmd <code>/load</code></td><td>入力ファイルから研究要素を抽出し cp0_input.yaml を生成</td></tr>
+<tr><td>C2</td><td>Literature Searcher</td><td>Subagent + OpenAlex API + Exa MCP</td><td>Q1/Q2 限定で関連文献を検索</td></tr>
+<tr><td>C3</td><td>BibTeX Fetcher</td><td>Script <code>bib_fetcher.py</code> + CrossRef API</td><td>DOI から BibTeX/CSL-JSON を取得</td></tr>
+<tr><td>C4</td><td>SJR Filter</td><td>Skill <code>sjr-filter</code></td><td>Scimago Journal Rank データで Q1/Q2 判定</td></tr>
+<tr><td>C5</td><td>Outline Generator</td><td>Subagent <code>outliner</code></td><td>IMRaD 構成のアウトライン生成</td></tr>
+<tr><td>C6</td><td>Writer</td><td>Subagent <code>writer</code></td><td>セクション別に本文・Abstract・Keywords を執筆</td></tr>
+<tr><td>C7</td><td>Citation Manager</td><td>Skill <code>citation</code></td><td>引用整形（IEEE/ACS/AIP/Nature/APA 等）</td></tr>
+<tr><td>C8</td><td>Factcheck Packet Builder</td><td>Slash Cmd <code>/factcheck-packet</code></td><td>NotebookLM 用パッケージ出力</td></tr>
+<tr><td>C9</td><td>Review Packet Builder</td><td>Slash Cmd <code>/review-packet</code></td><td>外部 AI レビュー用パッケージ出力 + Claude 自動レビュー起動</td></tr>
+<tr><td>C10</td><td>Integrator</td><td>Subagent <code>integrator</code></td><td>レビュー・Factcheck 結果を本文に統合</td></tr>
+<tr><td>C11</td><td>DOCX Exporter</td><td>Skill <code>docx-export</code></td><td>python-docx で Word 出力</td></tr>
+</table>
+
+<h3>2.2 MCP 構成</h3>
+<table>
+<tr><th>Server</th><th>用途</th><th>コスト</th></tr>
+<tr><td>Exa</td><td>補完文献検索（OpenAlex でカバレッジ不足の場合）</td><td>無料枠あり（補完用途のみで枠内に収まる想定）</td></tr>
+<tr><td>Google Drive（任意）</td><td>出力ファイルの共有</td><td>無料</td></tr>
+</table>
+
+<h2>3. ワークフロー（CP0〜CP7）</h2>
+
+<pre>CP0  入力受領          /load
+  ↓
+CP1  文献検索 + Q1/Q2フィルタ  /search
+  ↓（ユーザー確認: 引用候補リスト）
+CP2  アウトライン生成    /outline
+  ↓（ユーザー確認: 構成承認）
+CP3  ドラフト執筆        /draft
+     （本文 + Abstract + Keywords、引用 ID 検証付き）
+  ↓
+CP4  マルチAIレビュー    /review-packet
+     Claude: 自動  /  ChatGPT・Gemini: Human-in-the-loop
+  ↓（ユーザー: 外部 AI にリレー → 結果貼戻し）
+     /integrate-review
+CP5  Factcheck          /factcheck-packet
+  ↓（ユーザー: NotebookLM にリレー → 結果貼戻し）
+     /integrate-factcheck
+CP7  Word 出力           /export</pre>
+
+<h3>3.1 各 CP の入出力</h3>
+<table>
+<tr><th>CP</th><th>入力</th><th>主な出力</th><th>ユーザー確認</th></tr>
+<tr><td>CP0</td><td>input.md / input.yaml</td><td>cp0_input.yaml、progress.yaml、config.yaml</td><td>欠損フィールドの警告確認</td></tr>
+<tr><td>CP1</td><td>cp0_input.yaml、config.yaml</td><td>cp1_references.md、cp1_references.bib</td><td>引用候補リストの編集・承認</td></tr>
+<tr><td>CP2</td><td>cp0_input.yaml、cp1_references.md</td><td>cp2_outline.md</td><td>アウトラインの編集・承認</td></tr>
+<tr><td>CP3</td><td>cp2_outline.md、cp1_references.md</td><td>cp3_draft_v1.md</td><td>ドラフトの確認</td></tr>
+<tr><td>CP4</td><td>cp3_draft_v1.md</td><td>cp4_review_packet/（results/claude.md 自動生成）</td><td>ChatGPT・Gemini への投稿と結果保存</td></tr>
+<tr><td>CP5</td><td>cp3_draft_v1.md、cp1_references.json</td><td>cp5_factcheck_packet/（claims.md、pdfs/）</td><td>NotebookLM での検証と results.md 記入</td></tr>
+<tr><td>CP6</td><td>レビュー結果、Factcheck 結果</td><td>cp6_draft_v2.md、cp6_revision_report.md</td><td>diff の承認/却下</td></tr>
+<tr><td>CP7</td><td>cp6_draft_v2.md、config.yaml</td><td>cp7_final.md、output/*.docx</td><td>最終確認</td></tr>
+</table>
+
+<h2>4. 文献検索仕様</h2>
+
+<h3>4.1 OpenAlex API（主検索）</h3>
+<ul>
+<li>Endpoint: <code>https://api.openalex.org/works</code></li>
+<li>Polite pool: クエリに <code>mailto=&lt;user_email&gt;</code> を付与してレート制限を緩和（10 req/sec）</li>
+<li>フィールド絞り込み: <code>select=</code> で取得フィールドを限定し帯域を節約</li>
+<li>収録論文数: 2.5 億件以上（arXiv・PubMed Central・DOAJ 等を包含）</li>
+</ul>
+
+<h3>4.2 Q1/Q2 フィルタリング</h3>
+<p>Scimago Journal Rank (SJR) の年次 CSV（<code>data/sjr_YYYY.csv</code>）を使用。</p>
+<table>
+<tr><th>優先順位</th><th>マッチング方法</th><th>閾値</th></tr>
+<tr><td>1位</td><td>ISSN（完全一致）</td><td>—</td></tr>
+<tr><td>2位</td><td>誌名の正規化 + Levenshtein 類似度</td><td>≥ 0.85</td></tr>
+<tr><td>特例</td><td>boost_journals 指定誌は SJR バイパス可（bypass_sjr_for_targets: true）</td><td>—</td></tr>
+</table>
+
+<h3>4.3 ターゲットジャーナル・ブースト</h3>
+<p><code>boost_journals</code> を指定すると、指定誌の論文に係数（<code>target_boost</code>、デフォルト 1.5）を乗算して優先度を上げる。上限制御（<code>max_target_citation_ratio</code>、デフォルト 0.4）でエコーチェンバー化を防ぐ。</p>
+
+<h2>5. Factcheck 仕様</h2>
+
+<h3>5.1 Factcheck Packet 構成</h3>
+<pre>factcheck_packet/
+├── claims.md              本文中の全引用主張（主張 + 引用ID + DOI のテーブル）
+├── pdfs/                  自動取得した OA-PDF（PDF マジックバイト検証済み）
+├── missing_pdfs.md        ユーザーが手動入手すべき PDF リスト
+├── notebooklm_prompts.md  NotebookLM への検証プロンプト集
+├── instructions.md        NotebookLM 操作マニュアル
+└── results.md             結果記入テンプレート（空）</pre>
+
+<h3>5.2 NotebookLM の判定基準</h3>
+<table>
+<tr><th>Verdict</th><th>意味</th><th>/integrate-factcheck での処理</th></tr>
+<tr><td>SUPPORTED</td><td>主張は論文に明確に支持されている</td><td>変更なし</td></tr>
+<tr><td>PARTIAL</td><td>部分的に支持されている</td><td>表現を緩和する修正案を提示</td></tr>
+<tr><td>NOT_SUPPORTED</td><td>論文に該当箇所がない</td><td>引用削除・表現変更・代替文献提案</td></tr>
+</table>
+
+<h2>6. マルチ AI レビュー仕様</h2>
+<table>
+<tr><th>観点</th><th>AI</th><th>方式</th></tr>
+<tr><td>論理構成・文体</td><td>Claude (reviewer Subagent)</td><td>自動実行</td></tr>
+<tr><td>学術的正確性・先行研究の網羅性</td><td>ChatGPT (with search)</td><td>Human-in-the-loop</td></tr>
+<tr><td>統計・データ解釈の妥当性</td><td>Gemini</td><td>Human-in-the-loop</td></tr>
+</table>
+
+<h3>6.1 統合ロジック</h3>
+<ul>
+<li><code>[CRITICAL]</code> タグ付きの指摘 → 必ず対応</li>
+<li>2 つ以上の AI が同じ箇所を指摘 → 高優先度として必ず対応</li>
+<li>改善提案は diff 形式でユーザーに提示し承認制</li>
+</ul>
+
+<h2>7. 出力仕様</h2>
+
+<h3>7.1 生成ライブラリ</h3>
+<p><code>python-docx</code>（テンプレートファイル対応）</p>
+
+<h3>7.2 設定可能パラメータ</h3>
+<table>
+<tr><th>パラメータ</th><th>デフォルト</th><th>選択肢</th></tr>
+<tr><td>font_family_jp</td><td>游明朝</td><td>MS明朝、ヒラギノ明朝 等</td></tr>
+<tr><td>font_family_en</td><td>Times New Roman</td><td>Cambria、Arial 等</td></tr>
+<tr><td>font_size_body</td><td>10.5pt</td><td>9〜12pt</td></tr>
+<tr><td>line_spacing</td><td>1.5</td><td>1.0 / 1.15 / 1.5 / 2.0</td></tr>
+<tr><td>paper_size</td><td>A4</td><td>A4 / Letter</td></tr>
+<tr><td>citation_style</td><td>IEEE</td><td>IEEE / ACS / AIP / Nature / Vancouver / APA</td></tr>
+<tr><td>template</td><td>（なし）</td><td>templates/*.docx へのパス（学会指定テンプレート）</td></tr>
+</table>
+
+<h2>8. エラー回復・状態管理</h2>
+<p>各プロジェクトの <code>checkpoints/progress.yaml</code> で進捗を管理する。</p>
+<ul>
+<li>各スラッシュコマンドは起動時に <code>progress.yaml</code> を確認し、未完了の箇所から再開する</li>
+<li>セクション・ステップ完了のたびに即時更新（クラッシュ時の工程損失を最小化）</li>
+<li>エラー発生時は <code>error_log</code> に追記してから処理を停止</li>
+<li>ユーザーは <code>progress.yaml</code> の <code>current_cp</code> を手動編集して特定の CP に巻き戻せる</li>
+</ul>
+
+<h2>9. 将来拡張計画</h2>
+<table>
+<tr><th>Phase</th><th>内容</th></tr>
+<tr><td>2</td><td>分野追加（医学・生命科学 / 社会科学・人文科学）</td></tr>
+<tr><td>3</td><td>Local RAG による補助 Factcheck（NotebookLM の上限・手動操作を削減）</td></tr>
+<tr><td>4</td><td>API 経由のフル自動化オプション（ChatGPT / Gemini API モード）</td></tr>
+<tr><td>5</td><td>図表生成（matplotlib / plotly での自動図）</td></tr>
+<tr><td>6</td><td>リバイズ対応モード（査読コメント → 反論・修正案生成）</td></tr>
+<tr><td>7</td><td>Cover Letter / 投稿先推薦機能</td></tr>
+</table>
+
+<footer>paper-agent 最終仕様書 v1.2 &nbsp;|&nbsp; 2026-06-02 &nbsp;|&nbsp; https://github.com/dan23514/paper-agent</footer>
+</body>
+</html>

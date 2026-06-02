@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>paper-agent セキュリティ説明書</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Mincho ProN","游明朝",YuMincho,"MS Mincho",Georgia,serif;font-size:11pt;line-height:1.85;color:#1a1a1a;max-width:820px;margin:0 auto;padding:50px 60px}
+h1{font-size:21pt;border-bottom:3px solid #7b1a1a;padding-bottom:10px;margin-bottom:6px;color:#1a2a3a}
+.subtitle{font-size:11pt;color:#555;margin-bottom:4px}
+.meta-block{font-size:9.5pt;color:#666;border:1px solid #ddd;background:#f9f9f9;padding:10px 14px;margin:16px 0 28px;border-radius:4px}
+h2{font-size:14pt;color:#7b1a1a;border-left:5px solid #7b1a1a;padding-left:10px;margin:34px 0 12px;page-break-after:avoid}
+h3{font-size:12pt;color:#333;margin:22px 0 8px;border-bottom:1px dotted #ccc;padding-bottom:3px;page-break-after:avoid}
+p{margin-bottom:10px}
+ul,ol{margin:6px 0 10px 22px}
+li{margin-bottom:4px}
+table{border-collapse:collapse;width:100%;font-size:9.5pt;margin:12px 0;page-break-inside:avoid}
+th{background:#7b1a1a;color:#fff;padding:7px 10px;text-align:left;font-weight:normal}
+td{border:1px solid #ccc;padding:6px 10px;vertical-align:top}
+tr:nth-child(even) td{background:#fdf5f5}
+code{font-family:"Courier New",monospace;background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:9pt}
+pre{font-family:"Courier New",monospace;background:#f4f4f4;border:1px solid #ddd;padding:12px;border-radius:4px;font-size:8.5pt;overflow-x:auto;margin:10px 0;line-height:1.6;page-break-inside:avoid}
+.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:8px 12px;margin:10px 0;font-size:9.5pt;border-radius:0 4px 4px 0}
+.warn{background:#fff8e1;border-left:4px solid #f9a825;padding:8px 12px;margin:10px 0;font-size:9.5pt;border-radius:0 4px 4px 0}
+.danger{background:#fdecea;border-left:4px solid #c0392b;padding:8px 12px;margin:10px 0;font-size:9.5pt;border-radius:0 4px 4px 0}
+footer{margin-top:50px;padding-top:12px;border-top:1px solid #ddd;font-size:9pt;color:#888;text-align:center}
+@media print{body{padding:20px 30px;font-size:10pt}table,pre{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<h1>paper-agent セキュリティ説明書</h1>
+<p class="subtitle">データ取り扱い・APIキー管理・プライバシー保護ガイド</p>
+<div class="meta-block">
+<strong>Version</strong>: 1.0 &nbsp;|&nbsp;
+<strong>Date</strong>: 2026-06-02 &nbsp;|&nbsp;
+<strong>対象</strong>: paper-agent を使用するすべてのユーザー
+</div>
+
+<h2>1. 本システムが扱うデータの分類</h2>
+
+<table>
+<tr><th>データ種別</th><th>内容</th><th>保存場所</th><th>外部送信</th></tr>
+<tr><td>研究内容</td><td>テーマ・手法・データ・結果・解釈（input.md）</td><td>ローカルのみ</td><td>Claude Code API へ送信（※1）</td></tr>
+<tr><td>論文ドラフト</td><td>cp3_draft_v1.md〜cp6_draft_v2.md</td><td>ローカルのみ</td><td>Claude/ChatGPT/Gemini へ送信（レビュー時）</td></tr>
+<tr><td>引用論文 PDF</td><td>取得済み PDF ファイル</td><td>ローカルのみ</td><td>NotebookLM へアップロード（ユーザー操作）</td></tr>
+<tr><td>検索クエリ</td><td>研究テーマ・手法のキーワード</td><td>ローカルのみ</td><td>OpenAlex / Exa MCP へ送信</td></tr>
+<tr><td>メールアドレス</td><td>config.py の MAILTO_EMAIL</td><td>ローカルのみ</td><td>OpenAlex / CrossRef polite pool に付与（※2）</td></tr>
+<tr><td>Exa API キー</td><td>.claude/mcp.json に設定</td><td>ローカルのみ</td><td>Exa サーバーへ送信（補完検索時のみ）</td></tr>
+<tr><td>BibTeX データ</td><td>cp1_references.bib</td><td>ローカルのみ</td><td>なし</td></tr>
+<tr><td>生成 .docx</td><td>output/*.docx</td><td>ローカルのみ</td><td>なし</td></tr>
+</table>
+
+<p>※1 Claude Code / Anthropic API の利用規約に準拠。入力データの取り扱いは Anthropic のプライバシーポリシーに従う。</p>
+<p>※2 MAILTO_EMAIL は API レート制限緩和のための polite pool 識別子として使用される。認証・登録は不要。</p>
+
+<h2>2. 外部 API への送信内容の詳細</h2>
+
+<h3>2.1 OpenAlex API</h3>
+<div class="ok">送信データ: 検索クエリ（テーマ・手法キーワード）、MAILTO_EMAIL、DOI（メタデータ補完時）</div>
+<ul>
+<li>OpenAlex は完全無料・認証不要のオープン学術データベース</li>
+<li>送信されるのは検索クエリのみ。研究内容の全文は送信しない</li>
+<li>MAILTO_EMAIL はレート制限緩和のためのメタデータとして使用（応答メールは来ない）</li>
+</ul>
+
+<h3>2.2 CrossRef API</h3>
+<div class="ok">送信データ: DOI、書誌情報クエリ（著者名・年・タイトルヒント）、MAILTO_EMAIL</div>
+<ul>
+<li>DOI を渡して BibTeX メタデータを取得するのみ</li>
+<li>研究内容は送信しない</li>
+</ul>
+
+<h3>2.3 Exa MCP（補完検索時のみ）</h3>
+<div class="warn">送信データ: 検索クエリ、Exa API キー</div>
+<ul>
+<li>OpenAlex でカバレッジ不足の場合のみ起動する（通常は使用しない）</li>
+<li>API キーは <code>.claude/mcp.json</code> に記載。リモートリポジトリに push しない（.gitignore 推奨）</li>
+</ul>
+
+<h3>2.4 Claude Code / Anthropic API</h3>
+<div class="warn">送信データ: 研究内容（input.md の全文）、論文ドラフト（レビュー・執筆時）</div>
+<ul>
+<li>Claude Code のすべての処理（執筆・レビュー・統合）で研究内容が Anthropic のサーバーに送信される</li>
+<li>Anthropic のプライバシーポリシー・利用規約に従い処理される</li>
+<li>未公開研究・機密情報を含む場合は、Anthropic の商用プランのデータ保護ポリシーを事前に確認すること</li>
+</ul>
+
+<h3>2.5 ChatGPT・Gemini（レビュー時・ユーザー操作）</h3>
+<div class="warn">送信データ: 論文ドラフト全文（ユーザーが手動で貼り付ける）</div>
+<ul>
+<li>CP4 レビュー時にユーザーが手動でドラフトを貼り付ける</li>
+<li>各 AI の利用規約（OpenAI / Google の商用利用条件・入力データの扱い）を事前に確認すること</li>
+<li>未公開研究データを投稿する場合はとくに注意が必要</li>
+</ul>
+
+<h3>2.6 NotebookLM（Factcheck 時・ユーザー操作）</h3>
+<div class="warn">送信データ: 引用論文 PDF（ユーザーがアップロードする）</div>
+<ul>
+<li>著作権のある論文 PDF をアップロードする場合は、当該論文の利用規約と所属機関のライセンス条件を確認すること</li>
+<li>NotebookLM Free 版のソース上限（50件/ノートブック）に注意</li>
+</ul>
+
+<h2>3. Git 管理ポリシー（.gitignore）</h2>
+
+<h3>3.1 リモートに上がらないもの（.gitignore で除外）</h3>
+<table>
+<tr><th>対象</th><th>除外パターン</th><th>理由</th></tr>
+<tr><td>研究プロジェクト全体</td><td><code>projects/*</code>（template/ を除く）</td><td>未公開研究データの保護</td></tr>
+<tr><td>個人設定ファイル</td><td><code>scripts/config.py</code></td><td>メールアドレスの漏洩防止</td></tr>
+<tr><td>SJR CSV データ</td><td><code>data/sjr_*.csv</code></td><td>ファイルサイズ（11MB）・ライセンス</td></tr>
+<tr><td>PDF ファイル</td><td><code>*.pdf</code></td><td>著作権保護</td></tr>
+<tr><td>学会テンプレート</td><td><code>templates/</code></td><td>著作権保護</td></tr>
+<tr><td>Python キャッシュ</td><td><code>__pycache__/、*.pyc</code></td><td>不要ファイル</td></tr>
+</table>
+
+<h3>3.2 リモートに上がるもの</h3>
+<div class="ok">フレームワーク本体のみ: .claude/、scripts/（config.example.py を含む）、manuals/、docs/、data/journal_abbr.json、CLAUDE.md、README.md、requirements.txt</div>
+<p>公開前に <code>git grep -n -E "email|api_key|password"</code> でスキャンし、機密情報が含まれていないことを確認すること。</p>
+
+<h2>4. API キー管理</h2>
+
+<h3>4.1 Exa API キー</h3>
+<div class="danger">絶対にコミットしないこと。<code>.claude/mcp.json</code> は .gitignore に追加するか、キーは環境変数経由で渡すことを推奨する。</div>
+<pre>.claude/mcp.json に設定する場合:
+{
+  "mcpServers": {
+    "exa": {
+      "env": { "EXA_API_KEY": "&lt;ここに実際のキーを記載&gt;" }
+    }
+  }
+}
+
+※ このファイルを git add する前に必ず確認すること。
+推奨: .gitignore に .claude/mcp.json を追記するか、
+      EXA_API_KEY を OS の環境変数に設定して参照する。</pre>
+
+<h3>4.2 MAILTO_EMAIL（メールアドレス）</h3>
+<ul>
+<li><code>scripts/config.py</code> に記載。このファイルは .gitignore で除外済み</li>
+<li>新規セットアップ時は <code>config.example.py</code> をコピーして <code>config.py</code> を作成すること</li>
+<li>メールアドレスは API のポライトプール識別子として使用されるだけで、漏洩しても直接的なリスクは低い。しかし公開リポジトリへの commit は避けること</li>
+</ul>
+
+<h2>5. 著作権・ライセンスの取り扱い</h2>
+
+<h3>5.1 引用論文 PDF</h3>
+<ul>
+<li>自動取得する PDF は OpenAlex の OA リンク（オープンアクセス版）のみ使用する</li>
+<li>所属機関のライセンスで取得した PDF は <code>pdfs/</code> に配置するが、.gitignore により自動的にリモートへは上がらない</li>
+<li>PDF を第三者と共有する場合は、各論文の利用規約を確認すること</li>
+</ul>
+
+<h3>5.2 SJR データ</h3>
+<ul>
+<li>Scimago Journal Rank のデータは <a href="https://www.scimagojr.com">scimagojr.com</a> から取得</li>
+<li>商用利用には別途ライセンス確認が必要な場合がある</li>
+<li>CSV は <code>data/sjr_*.csv</code> として .gitignore で除外されるため、リポジトリには含まれない</li>
+</ul>
+
+<h2>6. 研究データのプライバシー</h2>
+
+<h3>6.1 未公開研究の取り扱い</h3>
+<div class="warn">
+<strong>注意</strong>: <code>/draft</code>・<code>/review-packet</code> 実行時に、研究内容が Claude Code（Anthropic）・ChatGPT（OpenAI）・Gemini（Google）のサーバーへ送信される。査読前・特許出願前の未公開研究を取り扱う場合は、各サービスの商用プランの「データ非学習オプション」や「エンタープライズ契約」の利用を検討すること。
+</div>
+
+<h3>6.2 progress.yaml・checkpoints のバックアップ</h3>
+<ul>
+<li><code>projects/</code> は .gitignore で除外されるため、GitHub によるバックアップは行われない</li>
+<li>重要な研究プロジェクトは、OneDrive / Google Drive 等のクラウドストレージと併用してバックアップすること</li>
+</ul>
+
+<h2>7. セキュリティチェックリスト</h2>
+
+<table>
+<tr><th>#</th><th>確認項目</th><th>対応</th></tr>
+<tr><td>1</td><td><code>scripts/config.py</code> がリポジトリに含まれていない</td><td><code>git ls-files | grep config.py</code> で確認</td></tr>
+<tr><td>2</td><td>Exa API キーがコードにハードコードされていない</td><td><code>git grep -n "EXA_API_KEY.*[^&lt;]"</code> でスキャン</td></tr>
+<tr><td>3</td><td>メールアドレスがコードに含まれていない</td><td><code>git grep -n "hawaii.edu"</code> 等でスキャン</td></tr>
+<tr><td>4</td><td>PDF・SJR CSV がリポジトリに含まれていない</td><td><code>git ls-files | grep -E "\.pdf|sjr_"</code> で確認</td></tr>
+<tr><td>5</td><td>研究プロジェクト（projects/jstf-ver1/ 等）が除外されている</td><td><code>git ls-files | grep projects/</code> で確認</td></tr>
+<tr><td>6</td><td>未公開研究を ChatGPT / Gemini に投稿する際の規約確認</td><td>各サービスの利用規約を参照</td></tr>
+</table>
+
+<footer>paper-agent セキュリティ説明書 v1.0 &nbsp;|&nbsp; 2026-06-02 &nbsp;|&nbsp; https://github.com/dan23514/paper-agent</footer>
+</body>
+</html>

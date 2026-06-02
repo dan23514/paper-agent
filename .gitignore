@@ -13,8 +13,10 @@ scripts/patch_bib_years.py
 data/sjr_*.csv
 data/scimagojr*.csv
 
-# --- PDFs (copyright) ---
+# --- PDFs (copyright: research papers) ---
 *.pdf
+# Allow generated documentation PDFs in docs/
+!docs/*.pdf
 
 # --- Python ---
 __pycache__/
